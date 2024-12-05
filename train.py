@@ -12,6 +12,7 @@ if __name__ == '__main__':
     print('#training meshes = %d' % dataset_size)
 
     model = create_model(opt)
+    print(model.__dict__)
     writer = Writer(opt)
     total_steps = 0
 
