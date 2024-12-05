@@ -142,9 +142,11 @@ class MeshConvNet(nn.Module):
 
         for i in range(len(self.k) - 1):
             x = getattr(self, 'conv{}'.format(i))(x, mesh)
+            print('Shape before 1:', x.shape)
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
 
         x = x.view(x.size(0), -1) #x = x.view(-1, self.k[-1]) CHECK
+        print('Shape before 2:', x.shape)
 
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
@@ -166,9 +168,11 @@ class MResConv(nn.Module):
         x = self.conv0(x, mesh)
         x1 = x
         for i in range(self.skips):
+            print('Shape before 3:', x.shape)
             x = getattr(self, 'bn{}'.format(i + 1))(F.relu(x))
             x = getattr(self, 'conv{}'.format(i + 1))(x, mesh)
         x += x1
+        print('Shape before 4:', x.shape)
         x = F.relu(x)
         return x
 
@@ -213,6 +217,7 @@ class DownConv(nn.Module):
         x1 = self.conv1(fe, meshes)
         if self.bn:
             x1 = self.bn[0](x1)
+        print('Shape before 5:', x1.shape)
         x1 = F.relu(x1)
         x2 = x1
         for idx, conv in enumerate(self.conv2):
@@ -220,6 +225,7 @@ class DownConv(nn.Module):
             if self.bn:
                 x2 = self.bn[idx + 1](x2)
             x2 = x2 + x1
+            print('Shape before 6:', x2.shape)
             x2 = F.relu(x2)
             x1 = x2
         x2 = x2.squeeze(3)
@@ -262,6 +268,7 @@ class UpConv(nn.Module):
         x1 = self.conv1(x1, meshes)
         if self.bn:
             x1 = self.bn[0](x1)
+        print('Shape before 7:', x1.shape)
         x1 = F.relu(x1)
         x2 = x1
         for idx, conv in enumerate(self.conv2):
@@ -270,6 +277,7 @@ class UpConv(nn.Module):
                 x2 = self.bn[idx + 1](x2)
             if self.residual:
                 x2 = x2 + x1
+            print('Shape before 8:', x2.shape)
             x2 = F.relu(x2)
             x1 = x2
         x2 = x2.squeeze(3)
@@ -328,6 +336,7 @@ class MeshEncoder(nn.Module):
                     x = fe.unsqueeze(1)
                     fe = self.fcs_bn[i](x).squeeze(1)
                 if i < len(self.fcs) - 1:
+                    print('Shape before 9:', fe.shape)
                     fe = F.relu(fe)
         return fe, encoder_outs
 
