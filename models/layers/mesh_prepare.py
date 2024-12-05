@@ -321,15 +321,18 @@ def set_edge_lengths(mesh, edge_points=None):
 
 
 def extract_features(mesh):
-    """
-    Replace the features of the mesh with centroid coordinates of the edges.
-    """
-    vs = mesh.vs
-    edges = mesh.edges
-
-    centroids = (vs[edges[:, 0]] + vs[edges[:, 1]]) / 2.0
-
-    return centroids
+    features = []
+    edge_points = get_edge_points(mesh)
+    set_edge_lengths(mesh, edge_points)
+    with np.errstate(divide='raise'):
+        try:
+            for extractor in [dihedral_angle, symmetric_opposite_angles, symmetric_ratios]:
+                feature = extractor(mesh, edge_points)
+                features.append(feature)
+            return np.concatenate(features, axis=0)
+        except Exception as e:
+            print(e)
+            raise ValueError(mesh.filename, 'bad features')
 
 
 def dihedral_angle(mesh, edge_points):
