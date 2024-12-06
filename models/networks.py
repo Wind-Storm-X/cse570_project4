@@ -187,10 +187,10 @@ class MeshEncoderDecoder(nn.Module):
     def __init__(self, pools, down_convs, up_convs, blocks=0, transfer_data=True):
         super(MeshEncoderDecoder, self).__init__()
         self.transfer_data = transfer_data
-        self.encoder = MeshEncoder(down_convs, blocks=blocks)
+        self.encoder = MeshEncoder(pools, down_convs, blocks=blocks)
         unrolls = pools[:-1].copy()
         unrolls.reverse()
-        self.decoder = MeshDecoder(up_convs, blocks=blocks, transfer_data=transfer_data)
+        self.decoder = MeshDecoder(unrolls, up_convs, blocks=blocks, transfer_data=transfer_data)
 
     def forward(self, x, meshes):
         fe, before_pool = self.encoder((x, meshes))
@@ -201,9 +201,10 @@ class MeshEncoderDecoder(nn.Module):
         return self.forward(x, meshes)
 
 class DownConv(nn.Module):
-    def __init__(self, in_channels, out_channels, blocks=0):
+    def __init__(self, in_channels, out_channels, blocks=0, pool=0):
         super(DownConv, self).__init__()
         self.bn = []
+        self.pool = None
         self.conv1 = MeshConv(in_channels, out_channels)
         self.conv2 = []
         for _ in range(blocks):
@@ -212,6 +213,8 @@ class DownConv(nn.Module):
         for _ in range(blocks + 1):
             self.bn.append(nn.InstanceNorm2d(out_channels))
             self.bn = nn.ModuleList(self.bn)
+        if pool:
+            self.pool = MeshPool(pool)
 
     def __call__(self, x):
         return self.forward(x)
@@ -239,11 +242,12 @@ class DownConv(nn.Module):
 
 
 class UpConv(nn.Module):
-    def __init__(self, in_channels, out_channels, blocks=0, residual=True,
+    def __init__(self, in_channels, out_channels, blocks=0, unroll=0, residual=True,
                  batch_norm=True, transfer_data=True):
         super(UpConv, self).__init__()
         self.residual = residual
         self.bn = []
+        self.unroll = None
         self.transfer_data = transfer_data
         self.up_conv = MeshConv(in_channels, out_channels)
         if transfer_data:
@@ -258,6 +262,8 @@ class UpConv(nn.Module):
             for _ in range(blocks + 1):
                 self.bn.append(nn.InstanceNorm2d(out_channels))
             self.bn = nn.ModuleList(self.bn)
+        if unroll:
+            self.unroll = MeshUnpool(unroll)
 
     def __call__(self, x, from_down=None):
         return self.forward(x, from_down)
@@ -265,6 +271,8 @@ class UpConv(nn.Module):
     def forward(self, x, from_down):
         from_up, meshes = x
         x1 = self.up_conv(from_up, meshes).squeeze(3)
+        if self.unroll:
+            x1 = self.unroll(x1, meshes)
         if self.transfer_data:
             x1 = torch.cat((x1, from_down), 1)
         x1 = self.conv1(x1, meshes)
@@ -285,17 +293,30 @@ class UpConv(nn.Module):
 
 
 class MeshEncoder(nn.Module):
-    def __init__(self, convs, fcs=None, blocks=0, global_pool=None):
+    def __init__(self, pools, convs, fcs=None, blocks=0, global_pool=None):
         super(MeshEncoder, self).__init__()
         self.fcs = None
         self.convs = []
         for i in range(len(convs) - 1):
-            self.convs.append(DownConv(convs[i], convs[i + 1], blocks=blocks))
+            if i + 1 < len(pools):
+                pool = pools[i + 1]
+            else:
+                pool = 0
+            self.convs.append(DownConv(convs[i], convs[i + 1], blocks=blocks, pool=pool))
         self.global_pool = None
         if fcs is not None:
             self.fcs = []
             self.fcs_bn = []
             last_length = convs[-1]
+            if global_pool is not None:
+                if global_pool == 'max':
+                    self.global_pool = nn.MaxPool1d(pools[-1])
+                elif global_pool == 'avg':
+                    self.global_pool = nn.AvgPool1d(pools[-1])
+                else:
+                    assert False, 'global_pool %s is not defined' % global_pool
+            else:
+                last_length *= pools[-1]
             if fcs[0] == last_length:
                 fcs = fcs[1:]
             for length in fcs:
@@ -314,6 +335,8 @@ class MeshEncoder(nn.Module):
             fe, before_pool = conv((fe, meshes))
             encoder_outs.append(before_pool)
         if self.fcs is not None:
+            if self.global_pool is not None:
+                fe = self.global_pool(fe)
             fe = fe.contiguous().view(fe.size()[0], -1)
             for i in range(len(self.fcs)):
                 fe = self.fcs[i](fe)
@@ -327,13 +350,17 @@ class MeshEncoder(nn.Module):
     def __call__(self, x):
         return self.forward(x)
 
+
 class MeshDecoder(nn.Module):
-    def __init__(self, convs, blocks=0, batch_norm=True, transfer_data=True):
+    def __init__(self, unrolls, convs, blocks=0, batch_norm=True, transfer_data=True):
         super(MeshDecoder, self).__init__()
         self.up_convs = []
         for i in range(len(convs) - 2):
-            unroll = 0
-            self.up_convs.append(UpConv(convs[i], convs[i + 1], blocks=blocks,
+            if i < len(unrolls):
+                unroll = unrolls[i]
+            else:
+                unroll = 0
+            self.up_convs.append(UpConv(convs[i], convs[i + 1], blocks=blocks, unroll=unroll,
                                         batch_norm=batch_norm, transfer_data=transfer_data))
         self.final_conv = UpConv(convs[-2], convs[-1], blocks=blocks, unroll=False,
                                  batch_norm=batch_norm, transfer_data=False)
