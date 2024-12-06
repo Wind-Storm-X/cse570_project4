@@ -138,16 +138,23 @@ class MeshConvNet(nn.Module):
         self.fc2 = nn.Linear(fc_n, nclasses)
 
     def forward(self, x, mesh):
-
+        print("1:", x.shape)
         for i in range(len(self.k) - 1):
             x = getattr(self, 'conv{}'.format(i))(x, mesh)
+            print("2:", x.shape)
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
+            print("3:", x.shape)
         batch_size = x.size(0)
         x = x.view(-1, self.k[-1])
+        print("4:", x.shape)
         x = F.relu(self.fc1(x))
+        print("5:", x.shape)
         x = self.fc2(x)
+        print("6:", x.shape)
         x = x.view(batch_size, -1, x.size(1))
+        print("7:", x.shape)
         x = x.mean(dim=1)
+        print("8:", x.shape)
         return x
 
 class MResConv(nn.Module):
