@@ -142,17 +142,12 @@ class MeshConvNet(nn.Module):
         for i in range(len(self.k) - 1):
             x = getattr(self, 'conv{}'.format(i))(x, mesh)
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
-        print('Shape 1:', x.shape)
-        print('Shape 2:', x.shape)
         batch_size = x.size(0)
         x = x.view(-1, self.k[-1])
-        print('Shape 3:', x.shape)
-
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         x = x.view(batch_size, -1, x.size(1))
         x = x.mean(dim=1)
-        print('Shape 4:', x.shape)
         return x
 
 class MResConv(nn.Module):
