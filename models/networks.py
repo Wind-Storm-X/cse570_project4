@@ -144,7 +144,7 @@ class MeshConvNet(nn.Module):
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
         print('Shape 1:', x.shape)
         print('Shape 2:', x.shape)
-        x = x.view(-1, x.size(1)) #CHECK
+        x = x.view(-1, self.k[-1])
         print('Shape 3:', x.shape)
 
         x = F.relu(self.fc1(x))
