@@ -150,6 +150,7 @@ class MeshConvNet(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         x = x.view(16, -1, x.size(1))
+        x = x.mean(dim=1)
         print('Shape 4:', x.shape)
         return x
 
