@@ -144,8 +144,9 @@ class MeshConvNet(nn.Module):
             x = getattr(self, 'conv{}'.format(i))(x, mesh)
             print('Shape before 1:', x.shape)
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
-
-        x = x.view(x.size(0), -1) #x = x.view(-1, self.k[-1]) CHECK
+        print('Shape before reshape:', x.shape)
+        x = x.view(x.size(1), -1) #x = x.view(-1, self.k[-1]) CHECK
+        print('Shape after reshape:', x.shape)
         print('Shape before 2:', x.shape)
 
         x = F.relu(self.fc1(x))
