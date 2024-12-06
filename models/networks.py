@@ -92,7 +92,6 @@ def init_net(net, init_type, init_gain, gpu_ids):
         init_weights(net, init_type, init_gain)
     return net
 
-
 def define_classifier(input_nc, ncf, ninput_edges, nclasses, opt, gpu_ids, arch, init_type, init_gain):
     net = None
     norm_layer = get_norm_layer(norm_type=opt.norm, num_groups=opt.num_groups)
@@ -142,12 +141,10 @@ class MeshConvNet(nn.Module):
 
         for i in range(len(self.k) - 1):
             x = getattr(self, 'conv{}'.format(i))(x, mesh)
-            print('Shape before 1:', x.shape)
             x = F.relu(getattr(self, 'norm{}'.format(i))(x))
         print('Shape before reshape:', x.shape)
-        x = x.view(-1, x.size(1)) #x = x.view(-1, self.k[-1]) CHECK
+        x = x.view(-1, x.size(1)) #CHECK
         print('Shape after reshape:', x.shape)
-        print('Shape before 2:', x.shape)
 
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
@@ -169,11 +166,9 @@ class MResConv(nn.Module):
         x = self.conv0(x, mesh)
         x1 = x
         for i in range(self.skips):
-            print('Shape before 3:', x.shape)
             x = getattr(self, 'bn{}'.format(i + 1))(F.relu(x))
             x = getattr(self, 'conv{}'.format(i + 1))(x, mesh)
         x += x1
-        print('Shape before 4:', x.shape)
         x = F.relu(x)
         return x
 
@@ -184,10 +179,10 @@ class MeshEncoderDecoder(nn.Module):
     def __init__(self, pools, down_convs, up_convs, blocks=0, transfer_data=True):
         super(MeshEncoderDecoder, self).__init__()
         self.transfer_data = transfer_data
-        self.encoder = MeshEncoder(pools, down_convs, blocks=blocks)
+        self.encoder = MeshEncoder(down_convs, blocks=blocks)
         unrolls = pools[:-1].copy()
         unrolls.reverse()
-        self.decoder = MeshDecoder(unrolls, up_convs, blocks=blocks, transfer_data=transfer_data)
+        self.decoder = MeshDecoder(up_convs, blocks=blocks, transfer_data=transfer_data)
 
     def forward(self, x, meshes):
         fe, before_pool = self.encoder((x, meshes))
@@ -198,7 +193,7 @@ class MeshEncoderDecoder(nn.Module):
         return self.forward(x, meshes)
 
 class DownConv(nn.Module):
-    def __init__(self, in_channels, out_channels, blocks=0, pool=0):
+    def __init__(self, in_channels, out_channels, blocks=0):
         super(DownConv, self).__init__()
         self.bn = []
         self.conv1 = MeshConv(in_channels, out_channels)
@@ -218,7 +213,6 @@ class DownConv(nn.Module):
         x1 = self.conv1(fe, meshes)
         if self.bn:
             x1 = self.bn[0](x1)
-        print('Shape before 5:', x1.shape)
         x1 = F.relu(x1)
         x2 = x1
         for idx, conv in enumerate(self.conv2):
@@ -226,7 +220,6 @@ class DownConv(nn.Module):
             if self.bn:
                 x2 = self.bn[idx + 1](x2)
             x2 = x2 + x1
-            print('Shape before 6:', x2.shape)
             x2 = F.relu(x2)
             x1 = x2
         x2 = x2.squeeze(3)
@@ -238,7 +231,7 @@ class DownConv(nn.Module):
 
 
 class UpConv(nn.Module):
-    def __init__(self, in_channels, out_channels, blocks=0, unroll=0, residual=True,
+    def __init__(self, in_channels, out_channels, blocks=0, residual=True,
                  batch_norm=True, transfer_data=True):
         super(UpConv, self).__init__()
         self.residual = residual
@@ -269,7 +262,6 @@ class UpConv(nn.Module):
         x1 = self.conv1(x1, meshes)
         if self.bn:
             x1 = self.bn[0](x1)
-        print('Shape before 7:', x1.shape)
         x1 = F.relu(x1)
         x2 = x1
         for idx, conv in enumerate(self.conv2):
@@ -278,7 +270,6 @@ class UpConv(nn.Module):
                 x2 = self.bn[idx + 1](x2)
             if self.residual:
                 x2 = x2 + x1
-            print('Shape before 8:', x2.shape)
             x2 = F.relu(x2)
             x1 = x2
         x2 = x2.squeeze(3)
@@ -286,30 +277,17 @@ class UpConv(nn.Module):
 
 
 class MeshEncoder(nn.Module):
-    def __init__(self, pools, convs, fcs=None, blocks=0, global_pool=None):
+    def __init__(self, convs, fcs=None, blocks=0, global_pool=None):
         super(MeshEncoder, self).__init__()
         self.fcs = None
         self.convs = []
         for i in range(len(convs) - 1):
-            if i + 1 < len(pools):
-                pool = pools[i + 1]
-            else:
-                pool = 0
-            self.convs.append(DownConv(convs[i], convs[i + 1], blocks=blocks, pool=pool))
+            self.convs.append(DownConv(convs[i], convs[i + 1], blocks=blocks))
         self.global_pool = None
         if fcs is not None:
             self.fcs = []
             self.fcs_bn = []
             last_length = convs[-1]
-            if global_pool is not None:
-                if global_pool == 'max':
-                    self.global_pool = nn.MaxPool1d(pools[-1])
-                elif global_pool == 'avg':
-                    self.global_pool = nn.AvgPool1d(pools[-1])
-                else:
-                    assert False, 'global_pool %s is not defined' % global_pool
-            else:
-                last_length *= pools[-1]
             if fcs[0] == last_length:
                 fcs = fcs[1:]
             for length in fcs:
@@ -328,8 +306,6 @@ class MeshEncoder(nn.Module):
             fe, before_pool = conv((fe, meshes))
             encoder_outs.append(before_pool)
         if self.fcs is not None:
-            if self.global_pool is not None:
-                fe = self.global_pool(fe)
             fe = fe.contiguous().view(fe.size()[0], -1)
             for i in range(len(self.fcs)):
                 fe = self.fcs[i](fe)
@@ -337,24 +313,19 @@ class MeshEncoder(nn.Module):
                     x = fe.unsqueeze(1)
                     fe = self.fcs_bn[i](x).squeeze(1)
                 if i < len(self.fcs) - 1:
-                    print('Shape before 9:', fe.shape)
                     fe = F.relu(fe)
         return fe, encoder_outs
 
     def __call__(self, x):
         return self.forward(x)
 
-
 class MeshDecoder(nn.Module):
-    def __init__(self, unrolls, convs, blocks=0, batch_norm=True, transfer_data=True):
+    def __init__(self, convs, blocks=0, batch_norm=True, transfer_data=True):
         super(MeshDecoder, self).__init__()
         self.up_convs = []
         for i in range(len(convs) - 2):
-            if i < len(unrolls):
-                unroll = unrolls[i]
-            else:
-                unroll = 0
-            self.up_convs.append(UpConv(convs[i], convs[i + 1], blocks=blocks, unroll=unroll,
+            unroll = 0
+            self.up_convs.append(UpConv(convs[i], convs[i + 1], blocks=blocks,
                                         batch_norm=batch_norm, transfer_data=transfer_data))
         self.final_conv = UpConv(convs[-2], convs[-1], blocks=blocks, unroll=False,
                                  batch_norm=batch_norm, transfer_data=False)
