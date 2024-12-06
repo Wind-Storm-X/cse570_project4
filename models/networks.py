@@ -148,6 +148,7 @@ class MeshConvNet(nn.Module):
 
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
+        print('Shape after last linear layer:', x.shape)
         return x
 
 class MResConv(nn.Module):
